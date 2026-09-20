@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -21,6 +22,9 @@ WORK = Path("/work")
 ARTICLE_RE = re.compile(r"<article\b.*?</article>", re.S)
 SVG_OBJECT_RE = re.compile(r'<object\b([^>]*?)type="image/svg\+xml"([^>]*?)data="([^"]+)"([^>]*)>\s*</object>', re.S)
 IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]+)(")')
+MATH_RE = re.compile(r"<math\b.*?</math>", re.S)
+ANNOTATION_RE = re.compile(r"<annotation(?:-xml)?\b.*?</annotation(?:-xml)?>", re.S)
+PLACEHOLDER_RE = re.compile(r'<span class="mathph" data-i="(\d+)">[^<]*</span>')
 
 
 def log(msg):
@@ -56,6 +60,50 @@ def rasterize_svgs(html: str, base: Path) -> str:
         return f"{m.group(1)}{png.relative_to(base)}{m.group(3)}"
 
     return IMG_SRC_RE.sub(repl, html)
+
+
+def stash_mathml(html: str) -> tuple[str, list[str]]:
+    """Replace every <math> with a placeholder span so pandoc leaves it alone.
+
+    Pandoc would otherwise re-parse the TeX annotation with texmath, which
+    chokes on LaTeXML-internal macros (\\lx@sectionsign, \\nicefrac, ...) and
+    re-renders everything else. LaTeXML's own Presentation MathML is what
+    arXiv shows in the browser, so keep it verbatim instead."""
+    from lxml import etree
+
+    stash: list[str] = []
+
+    def repl(m):
+        mathml = ANNOTATION_RE.sub("", m.group(0))
+        mathml = re.sub(r'\s+alttext="[^"]*"', "", mathml, count=1)  # raw TeX, not for readers
+        # HTML5 serialisation omits the namespace; XHTML needs it or the
+        # element is just an unknown tag and nothing renders as math.
+        if "xmlns=" not in mathml[:200]:
+            mathml = mathml.replace("<math", '<math xmlns="http://www.w3.org/1998/Math/MathML"', 1)
+        try:
+            etree.fromstring(mathml)  # must be well-formed to survive in XHTML
+        except etree.XMLSyntaxError:
+            return m.group(0)  # leave it to pandoc after all
+        stash.append(mathml)
+        return f'<span class="mathph" data-i="{len(stash) - 1}">\u200b</span>'
+
+    return MATH_RE.sub(repl, html), stash
+
+
+def restore_mathml(epub: Path, stash: list[str]) -> None:
+    """Swap the placeholders in the finished EPUB back for the stashed MathML."""
+    if not stash:
+        return
+    tmp = epub.with_suffix(".tmp")
+    with zipfile.ZipFile(epub) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename.endswith(".xhtml"):
+                text = data.decode("utf-8")
+                text = PLACEHOLDER_RE.sub(lambda m: stash[int(m.group(1))], text)
+                data = text.encode("utf-8")
+            zout.writestr(item, data, compress_type=item.compress_type)
+    tmp.replace(epub)
 
 
 def make_cover(meta, path: Path) -> bool:
@@ -120,9 +168,12 @@ def pandoc_to_epub(input_path: Path, fmt: str, meta, out: Path, resource_dirs, l
 def convert_html(meta, html_path: Path, base: Path, out: Path):
     html = extract_article(html_path.read_text(encoding="utf-8", errors="replace"))
     html = rasterize_svgs(html, base)
+    html, stash = stash_mathml(html)
     clean = base / "article.html"
     clean.write_text(html, encoding="utf-8")
     pandoc_to_epub(clean, "html", meta, out, [base])
+    restore_mathml(out, stash)
+    log(f"restored {len(stash)} MathML formulas")
 
 
 def convert_tex(meta, src: Path, out: Path):

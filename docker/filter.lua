@@ -50,7 +50,9 @@ local function flatten_equation_table(tbl)
           inlines:insert(pandoc.Math("DisplayMath", m.text))
         end,
         Span = function(s)
-          if has_class(s, "ltx_tag_equation") or has_class(s, "ltx_tag") then
+          if has_class(s, "mathph") then
+            inlines:insert(s)  -- stashed MathML placeholder (see convert.py)
+          elseif has_class(s, "ltx_tag_equation") or has_class(s, "ltx_tag") then
             tag = pandoc.utils.stringify(s)
           end
         end,
@@ -99,6 +101,9 @@ end
 -- them as pop-ups instead of inline clutter.
 function Span(el)
   if has_class(el, "ltx_ERROR") then return {} end
+  -- List markers are duplicated: LaTeXML writes the bullet/number as text and
+  -- hides the browser's via list-style-type:none, which pandoc drops.
+  if has_class(el, "ltx_tag_item") then return {} end
   if has_class(el, "ltx_note") and not has_class(el, "ltx_note_frontmatter") then
     local content = nil
     el:walk({

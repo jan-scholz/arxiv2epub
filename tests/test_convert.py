@@ -27,3 +27,21 @@ def test_drop_title_heading_only_when_it_matches_the_title():
     assert "# Real section" in out
     unrelated = "# Some other heading\ntext\n"
     assert convert.drop_title_heading(unrelated, "Paper title") == unrelated
+
+
+def test_stash_mathml_keeps_latexml_markup_and_adds_namespace():
+    html = ('<p>see (<math id="m1" alttext="\\lx@sectionsign" display="inline">'
+            '<semantics><mi>§</mi><annotation encoding="application/x-tex">\\lx@sectionsign</annotation>'
+            '</semantics></math> 2.1)</p>')
+    out, stash = convert.stash_mathml(html)
+    assert out == '<p>see (<span class="mathph" data-i="0">​</span> 2.1)</p>'
+    assert len(stash) == 1
+    assert stash[0].startswith('<math xmlns="http://www.w3.org/1998/Math/MathML" id="m1"')
+    assert "annotation" not in stash[0] and "alttext" not in stash[0]
+    assert "<mi>§</mi>" in stash[0]
+
+
+def test_stash_mathml_leaves_malformed_math_to_pandoc():
+    html = "<p><math><mi>x</math></p>"
+    out, stash = convert.stash_mathml(html)
+    assert out == html and stash == []
