@@ -283,10 +283,17 @@ def ensure_docker_image(image: str) -> None:
         )
 
 
-def run_docker(work: Path, image: str, timeout: int) -> None:
+def run_docker(work: Path, image: str, timeout: int, verbose: bool) -> None:
     cmd = ["docker", "run", "--rm", "-v", f"{work}:/work", image]
-    print("  $ " + " ".join(cmd), file=sys.stderr)
-    subprocess.run(cmd, check=True, timeout=timeout)
+    if verbose:
+        print("  $ " + " ".join(cmd), file=sys.stderr)
+        subprocess.run(cmd, check=True, timeout=timeout)
+        return
+    # Quiet mode: keep the converter's chatter unless it actually fails.
+    result = subprocess.run(cmd, timeout=timeout, capture_output=True, text=True)
+    if result.returncode != 0:
+        tail = "\n".join((result.stdout + result.stderr).splitlines()[-30:])
+        raise SystemExit(f"conversion failed (docker exit {result.returncode}); last output:\n{tail}")
 
 
 def convert_one(ref: str, args: argparse.Namespace) -> Path:
@@ -312,7 +319,7 @@ def convert_one(ref: str, args: argparse.Namespace) -> Path:
             "url": paper.url,
         }
         (work / "meta.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-        run_docker(work.resolve(), args.image, args.timeout + 120)
+        run_docker(work.resolve(), args.image, args.timeout + 120, args.verbose)
 
         suffix = ".epub" if args.plain_epub else ".kepub.epub"
         produced = work / ("out.epub" if args.plain_epub else "out.kepub.epub")
@@ -339,6 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--image", default=DEFAULT_IMAGE, help="docker image to use (default: %(default)s)")
     p.add_argument("--timeout", type=int, default=900, help="TeX conversion timeout in seconds")
     p.add_argument("--work-dir", help="keep intermediate files under this directory (for debugging)")
+    p.add_argument("-v", "--verbose", action="store_true", help="show the docker command and the converter's output")
     args = p.parse_args(argv)
     ensure_docker_image(args.image)
 
