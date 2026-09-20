@@ -11,10 +11,31 @@ uv run arxiv2epub https://arxiv.org/abs/2609.13443 https://arxiv.org/abs/1611.03
 ```
 
 Accepts abs/pdf/html URLs or bare identifiers, as well as **local PDF files**
-(non-arXiv papers): `uv run arxiv2epub in/*.pdf`. Local PDFs must carry title
-and author in their PDF metadata (`exiftool -Title=... -Author=... x.pdf` to
-set them); a DOI in the `subject` field is picked up as the identifier.
-`-o DIR` chooses the output directory (point it at your Drive sync folder).
+(non-arXiv papers): `uv run arxiv2epub in/*.pdf`. `-o DIR` chooses the output
+directory (point it at your Drive sync folder).
+
+### Local PDFs need title and author metadata
+
+The output file is named after the title and the EPUB lists the authors, so a
+local PDF must carry both in its metadata. The script refuses PDFs that don't
+(many publisher PDFs ship without). Fix them with
+[exiftool](https://exiftool.org/) (`brew install exiftool`):
+
+```sh
+exiftool -overwrite_original \
+  -Title="ChatGPT is bullshit" \
+  -Author="Michael Townsen Hicks; James Humphries; Joe Slater" \
+  -Subject="doi:10.1007/s10676-024-09775-5" \
+  in/s10676-024-09775-5.pdf
+```
+
+- `Author` is a single string: separate multiple authors with `;` (or the
+  word `and`), and leave out affiliation markers.
+- `Subject` is optional; a DOI in it becomes the identifier (cover line, EPUB
+  metadata, `https://doi.org/…` link).
+- `-overwrite_original` skips exiftool's `*.pdf_original` backup. The edit
+  is an incremental PDF update and reversible with
+  `exiftool -PDF-update:all= file.pdf`.
 
 ## How it works
 
