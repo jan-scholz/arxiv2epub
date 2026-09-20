@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download an arXiv paper and turn it into a Kobo-friendly (k)epub.
+"""Download an arXiv paper (or take a local PDF) and turn it into a Kobo-friendly (k)epub.
 
 Sources are tried in order of fidelity:
 
@@ -46,7 +46,7 @@ ASSET_RE = re.compile(r'(<(?:img|object)\b[^>]*?\b(?:src|data)=")([^"]+)(")', re
 
 @dataclass
 class Paper:
-    arxiv_id: str  # with version, e.g. 1611.03530v2
+    ident: str  # arXiv id with version (1611.03530v2), or a DOI / file name for local papers
     title: str
     authors: list[str]
     date: str
@@ -54,8 +54,8 @@ class Paper:
     url: str
 
     @property
-    def bare_id(self) -> str:
-        return re.sub(r"v\d+$", "", self.arxiv_id)
+    def arxiv_id(self) -> str:
+        return self.ident
 
 
 @dataclass
@@ -105,7 +105,7 @@ def fetch_metadata(arxiv_id: str) -> Paper:
         raise SystemExit(f"arXiv API error for {arxiv_id}: {entry.findtext(ATOM + 'summary')}")
     versioned = (entry.findtext(ATOM + "id") or "").rsplit("/abs/", 1)[-1]
     return Paper(
-        arxiv_id=versioned or arxiv_id,
+        ident=versioned or arxiv_id,
         title=" ".join(title.split()),
         authors=[" ".join((a.findtext(ATOM + "name") or "").split()) for a in entry.findall(ATOM + "author")],
         date=(entry.findtext(ATOM + "published") or "")[:10],
@@ -244,6 +244,55 @@ def try_pdf(paper: Paper, work: Path) -> Source | None:
     return Source("pdf", Path("paper.pdf"), "arXiv PDF")
 
 
+# --------------------------------------------------------------------------- #
+# Local PDFs (non-arXiv papers)
+# --------------------------------------------------------------------------- #
+
+PDF_PROBE = """
+import json, sys, pymupdf
+doc = pymupdf.open(sys.argv[1])
+print(json.dumps(doc.metadata))
+"""
+
+
+def probe_pdf_metadata(pdf: Path, image: str) -> dict:
+    """Read the PDF's Info dictionary with PyMuPDF inside the container, so the
+    host stays free of PDF libraries."""
+    cmd = ["docker", "run", "--rm", "-v", f"{pdf.resolve()}:/in.pdf:ro",
+           "--entrypoint", "python3", image, "-c", PDF_PROBE, "/in.pdf"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise SystemExit(f"could not read {pdf}: {result.stderr.strip().splitlines()[-1:] or 'unknown error'}")
+    return json.loads(result.stdout)
+
+
+def _pdf_date(raw: str) -> str:
+    m = re.match(r"D:(\d{4})(\d{2})(\d{2})", raw or "")
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else ""
+
+
+def local_paper(pdf: Path, image: str) -> Paper:
+    meta = probe_pdf_metadata(pdf, image)
+    title = " ".join((meta.get("title") or "").split())
+    author = " ".join((meta.get("author") or "").split())
+    missing = [k for k, v in (("title", title), ("author", author)) if not v]
+    if missing:
+        raise SystemExit(
+            f"{pdf}: PDF metadata is missing {' and '.join(missing)}; "
+            "set it (e.g. `exiftool -Title=... -Author=... file.pdf`) and retry"
+        )
+    subject = meta.get("subject") or ""
+    doi = re.search(r"10\.\d{4,9}/[^\s,;]+", subject)
+    return Paper(
+        ident=f"doi:{doi.group(0)}" if doi else pdf.name,
+        title=title,
+        authors=[a.strip() for a in re.split(r";|\band\b", author) if a.strip()] or [author],
+        date=_pdf_date(meta.get("creationDate") or ""),
+        abstract="",
+        url=f"https://doi.org/{doi.group(0)}" if doi else "",
+    )
+
+
 def acquire(paper: Paper, work: Path, preference: str) -> Source:
     order = {
         "auto": [try_html, try_tex, try_pdf],
@@ -297,21 +346,30 @@ def run_docker(work: Path, image: str, timeout: int, verbose: bool) -> None:
 
 
 def convert_one(ref: str, args: argparse.Namespace) -> Path:
-    arxiv_id = parse_arxiv_id(ref)
-    paper = fetch_metadata(arxiv_id)
-    print(f"{paper.arxiv_id}: {paper.title}", file=sys.stderr)
+    local = Path(ref) if Path(ref).is_file() else None
+    if local:
+        if local.suffix.lower() != ".pdf":
+            raise SystemExit(f"{ref}: only .pdf files are supported as local input")
+        paper = local_paper(local, args.image)
+    else:
+        paper = fetch_metadata(parse_arxiv_id(ref))
+    print(f"{paper.ident}: {paper.title}", file=sys.stderr)
 
-    work = Path(args.work_dir) / paper.arxiv_id if args.work_dir else Path(tempfile.mkdtemp(prefix="arxiv2epub-"))
+    work = Path(args.work_dir) / safe_filename(paper.ident) if args.work_dir else Path(tempfile.mkdtemp(prefix="arxiv2epub-"))
     work.mkdir(parents=True, exist_ok=True)
     try:
-        src = acquire(paper, work, args.source)
+        if local:
+            shutil.copyfile(local, work / "paper.pdf")
+            src = Source("pdf", Path("paper.pdf"), "local PDF")
+        else:
+            src = acquire(paper, work, args.source)
         print(f"  using {src.mode}: {src.note}", file=sys.stderr)
         meta = {
             "mode": src.mode,
             "input": str(src.input),
             "kepub": not args.plain_epub,
             "timeout": args.timeout,
-            "arxiv_id": paper.arxiv_id,
+            "ident": paper.ident if local else f"arXiv:{paper.ident}",
             "title": paper.title,
             "authors": paper.authors,
             "date": paper.date,
@@ -337,7 +395,7 @@ def convert_one(ref: str, args: argparse.Namespace) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("papers", nargs="+", help="arXiv URLs or identifiers")
+    p.add_argument("papers", nargs="+", help="arXiv URLs/identifiers, or local .pdf files (need title+author metadata)")
     p.add_argument("-o", "--output-dir", default=".", help="where to put the .epub (default: cwd)")
     p.add_argument("--source", choices=["auto", "html", "tex", "pdf"], default="auto",
                    help="force a particular source instead of html -> tex -> pdf fallback")

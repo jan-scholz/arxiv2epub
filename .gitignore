@@ -6,3 +6,4 @@ build/
 out/
 *.epub
 .DS_Store
+in/

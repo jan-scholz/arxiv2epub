@@ -56,3 +56,9 @@ def test_looks_substantial_rejects_includepdf_stub():
     assert not a.looks_substantial(stub)
     body = "".join(f'<div class="ltx_para"><p>{"word " * 100}</p></div>' for _ in range(5))
     assert a.looks_substantial(f"<article>{body}</article>")
+
+
+def test_pdf_date():
+    assert a._pdf_date("D:20250321115101+05'30'") == "2025-03-21"
+    assert a._pdf_date("") == ""
+    assert a._pdf_date("garbage") == ""

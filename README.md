@@ -10,8 +10,11 @@ uv run arxiv2epub https://arxiv.org/abs/2609.13443 https://arxiv.org/abs/1611.03
 # -> ./Understanding deep learning requires rethinking generalization.kepub.epub
 ```
 
-Accepts abs/pdf/html URLs or bare identifiers. `-o DIR` chooses the output
-directory (point it at your Drive sync folder).
+Accepts abs/pdf/html URLs or bare identifiers, as well as **local PDF files**
+(non-arXiv papers): `uv run arxiv2epub in/*.pdf`. Local PDFs must carry title
+and author in their PDF metadata (`exiftool -Title=... -Author=... x.pdf` to
+set them); a DOI in the `subject` field is picked up as the identifier.
+`-o DIR` chooses the output directory (point it at your Drive sync folder).
 
 ## How it works
 
@@ -22,7 +25,7 @@ the arXiv API and picks the best available source, in this order:
 |---|---|---|
 | **arXiv HTML** (`arxiv.org/html/<id>`) | exists and is not an empty stub | pandoc → EPUB3 |
 | **TeX e-print** | no HTML | [latexml-oxide](https://github.com/dginev/latexml-oxide) (the Rust LaTeXML rewrite arXiv itself uses) → HTML → pandoc |
-| **PDF** | source is only an `\includepdf` wrapper, or PDF-only submission | PyMuPDF text/figure extraction → Markdown → pandoc (math will be rough) |
+| **PDF** | source is only an `\includepdf` wrapper, PDF-only submission, or a local file | PyMuPDF text/figure extraction → Markdown → pandoc (math will be rough; publisher two-column layouts rougher still) |
 
 All conversion runs inside the `arxiv2epub` Docker image (`docker/`), so no
 TeX ends up on the host. `--source html|tex|pdf` forces a route.
