@@ -1,0 +1,25 @@
+[project]
+name = "arxiv2epub"
+version = "0.1.0"
+description = "Turn arXiv papers into Kobo-friendly (k)epub files, converting inside Docker"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+arxiv2epub = "arxiv2epub:main"
+
+[tool.setuptools]
+# flat single-module layout; auto-discovery does not pick it up
+py-modules = ["arxiv2epub"]
+
+[build-system]
+requires = ["setuptools>=72"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "lxml>=6.1.3",
+    "pytest>=8",
+]

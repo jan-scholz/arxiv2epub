@@ -1,0 +1,27 @@
+/* Minimal, e-ink friendly styling on top of pandoc's EPUB defaults. */
+body { font-family: serif; line-height: 1.4; }
+h1, h2, h3, h4 { font-family: sans-serif; page-break-after: avoid; }
+p { text-align: justify; margin: 0 0 0.6em 0; }
+img { max-width: 100%; height: auto; }
+figure { margin: 1em 0; text-align: center; page-break-inside: avoid; }
+figcaption, .ltx_caption { font-size: 0.9em; text-align: left; margin-top: 0.4em; }
+table { border-collapse: collapse; font-size: 0.85em; margin: 0.8em auto; }
+th, td { padding: 0.15em 0.4em; border-bottom: 1px solid #ccc; }
+.ltx_border_t, .ltx_border_tt { border-top: 1px solid #000; }
+.ltx_border_b, .ltx_border_bb { border-bottom: 1px solid #000; }
+pre, code { font-family: monospace; font-size: 0.8em; white-space: pre-wrap; }
+.ltx_abstract { margin: 1em 1.5em; font-size: 0.95em; }
+.ltx_title_abstract { font-size: 1em; text-align: center; }
+.ltx_bibitem { margin-bottom: 0.5em; font-size: 0.9em; }
+.ltx_tag_bibitem { font-weight: bold; }
+.ltx_equation, .ltx_equationgroup { margin: 0.6em auto; overflow-x: auto; }
+.ltx_eqn_table { margin: 0 auto; }
+.eqn-tag { float: right; margin-left: 1em; }
+.ltx_font_bold { font-weight: bold; }
+.ltx_font_italic { font-style: italic; }
+.ltx_font_typewriter { font-family: monospace; }
+.ltx_font_smallcaps { font-variant: small-caps; }
+.ltx_theorem { margin: 0.8em 0; }
+.ltx_theorem_title { font-weight: bold; }
+.ltx_note_mark { font-size: 0.75em; vertical-align: super; }
+sup { font-size: 0.75em; }
