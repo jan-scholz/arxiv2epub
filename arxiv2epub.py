@@ -354,7 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     for ref in args.papers:
         try:
             dest = convert_one(ref, args)
-            print(dest)
+            print(f'saved "{dest}"')
         except (SystemExit, subprocess.SubprocessError, urllib.error.URLError) as e:
             failures += 1
             print(f"FAILED {ref}: {e}", file=sys.stderr)
