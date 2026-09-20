@@ -269,6 +269,20 @@ def safe_filename(title: str, limit: int = 180) -> str:
     return name[:limit].rstrip(" .") or "paper"
 
 
+def ensure_docker_image(image: str) -> None:
+    """Fail fast, before any downloads, if the conversion image is missing."""
+    try:
+        probe = subprocess.run(["docker", "image", "inspect", image],
+                               capture_output=True, text=True)
+    except FileNotFoundError:
+        raise SystemExit("docker is not installed or not on PATH; it is needed for the conversion step")
+    if probe.returncode != 0:
+        raise SystemExit(
+            f"Docker image {image!r} not found locally.\n"
+            f"Build it with `make install` or point --image at an existing image."
+        )
+
+
 def run_docker(work: Path, image: str, timeout: int) -> None:
     cmd = ["docker", "run", "--rm", "-v", f"{work}:/work", image]
     print("  $ " + " ".join(cmd), file=sys.stderr)
@@ -326,6 +340,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeout", type=int, default=900, help="TeX conversion timeout in seconds")
     p.add_argument("--work-dir", help="keep intermediate files under this directory (for debugging)")
     args = p.parse_args(argv)
+    ensure_docker_image(args.image)
 
     failures = 0
     for ref in args.papers:
